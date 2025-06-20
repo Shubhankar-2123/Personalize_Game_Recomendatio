@@ -1,0 +1,13 @@
+user_id,Name,rating,like,played
+user1,The Witcher 3,5,1,1
+user1,Genshin Impact,4,1,1
+user1,Minecraft,3,0,1
+user2,Genshin Impact,5,1,1
+user2,Among Us,2,0,1
+user2,Stardew Valley,4,1,1
+user3,The Witcher 3,4,1,1
+user3,Among Us,1,0,1
+user3,Minecraft,5,1,1
+user4,Stardew Valley,5,1,1
+user4,Genshin Impact,3,0,1
+user4,The Witcher 3,5,1,1

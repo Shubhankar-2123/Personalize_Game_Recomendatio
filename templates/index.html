@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar with genres -->
+        <div class="col-md-2 sidebar">
+            <h4>Browse by Genre</h4>
+            <div class="list-group">
+                {% for genre in genres %}
+                <a href="{{ url_for('genre', genre=genre) }}" class="list-group-item list-group-item-action">
+                    {{ genre }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Main content -->
+        <div class="col-md-10">
+            <div class="content-header mb-4">
+                <h2>Popular Games</h2>
+                <form action="{{ url_for('search') }}" method="get" class="search-form">
+                    <div class="input-group">
+                        <input type="text" name="q" class="form-control" placeholder="Search games...">
+                        <button type="submit" class="btn btn-primary">Search</button>
+                    </div>
+                </form>
+            </div>
+
+            {% if games %}
+            <div class="row">
+                {% for game in games %}
+                <div class="col-md-3 mb-4">
+                    <div class="card h-100">
+                        <img src="{{ game['Icon URL'] }}" class="card-img-top" alt="{{ game['Name'] }}">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ game['Name'] }}</h5>
+                            <p class="card-text">
+                                <small class="text-muted">{{ game['Developer'] }}</small><br>
+                                <small class="text-muted">{{ game['Primary Genre'] }}</small>
+                            </p>
+                            <div class="rating">
+                                <span class="stars">
+                                    {% for i in range(5) %}
+                                    {% if i < game['Average User Rating']|int %}
+                                    ★
+                                    {% else %}
+                                    ☆
+                                    {% endif %}
+                                    {% endfor %}
+                                </span>
+                                <small class="text-muted">({{ game['User Rating Count'] }} ratings)</small>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <a href="{{ url_for('game_detail', game_name=game['Name'], ref='index') }}" class="btn btn-primary btn-sm">View Details</a>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Pagination -->
+            {% if total_pages > 1 %}
+            <nav aria-label="Page navigation" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if current_page > 1 %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('index', page=current_page-1) }}">Previous</a>
+                    </li>
+                    {% endif %}
+
+                    {% for page in range(1, total_pages + 1) %}
+                    <li class="page-item {% if page == current_page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('index', page=page) }}">{{ page }}</a>
+                    </li>
+                    {% endfor %}
+
+                    {% if current_page < total_pages %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('index', page=current_page+1) }}">Next</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <div class="alert alert-info">
+                No games available at the moment.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
