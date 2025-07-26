@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+    <h2>Set New Password</h2>
+    <form method="POST" action="{{ url_for('reset_with_token', token=token) }}">
+        <div class="mb-3">
+            <label for="password" class="form-label">New Password</label>
+            <input type="password" class="form-control" id="password" name="password" required minlength="8">
+        </div>
+        <button type="submit" class="btn btn-primary">Reset Password</button>
+        <a href="{{ url_for('login') }}" class="btn btn-secondary ms-2">Cancel</a>
+    </form>
+</div>
+{% endblock %} 

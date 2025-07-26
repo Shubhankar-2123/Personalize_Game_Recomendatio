@@ -6,10 +6,13 @@ from collections import defaultdict
 import os
 from scipy.sparse import csr_matrix
 from database import db_manager
+from datetime import datetime
+
 
 class GameRecommender:
     def __init__(self, max_games=5000):
         """Initialize recommender system"""
+        
         try:
             # Load games from database
             self.games_data = db_manager.get_all_games(max_games)
@@ -109,68 +112,50 @@ class GameRecommender:
         batch_idx = idx // 1000
         row_in_batch = idx % 1000
         return self.similarity_batches[batch_idx].getrow(row_in_batch).toarray()[0]
-
     def get_recommendations(self, user_id, top_n=10):
-        """Get personalized recommendations"""
+        """Get recommendations using content-filtered collaborative filtering"""
         try:
-            # Check if we have games data
+            # Check data availability
             if self.games_df is None:
                 print("⚠️  No games data available. Using fallback recommendations.")
                 return self.get_popular_games(top_n)
             
-            # Get user ratings from database
             user_ratings = db_manager.get_user_ratings(user_id)
-            
             if not user_ratings:
                 return self.get_popular_games(top_n)
             
-            # Build user profile using batches
-            user_profile = np.zeros(len(self.games_df))
-            valid_ratings = 0
+            # Step 1: Get content-based candidates
+            print(f"🎯 Step 1: Generating content-based candidate pool for user {user_id}")
+            content_candidates = self._get_content_based_candidates(user_id, top_n * 3)
             
-            for rating in user_ratings:
-                game_url = rating['game_url']
-                rating_value = rating['value']
-                
-                if game_url in self.game_id_to_idx:
-                    idx = self.game_id_to_idx[game_url]
-                    similarity_row = self._get_similarity_row(idx)
-                    if similarity_row is not None:
-                        user_profile += similarity_row * rating_value
-                        valid_ratings += 1
-            
-            if valid_ratings == 0:
+            if not content_candidates:
+                print("⚠️  No content-based candidates found. Using popular games.")
                 return self.get_popular_games(top_n)
             
-            # Normalize user profile
-            user_profile /= valid_ratings
+            print(f"✅ Generated {len(content_candidates)} content-based candidates")
             
-            # Get top similar games
-            sim_scores = list(enumerate(user_profile))
-            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+            # Step 2: Get collaborative scores for candidates
+            print(f"🎯 Step 2: Getting collaborative filtering scores for candidates")
+            collaborative_scores = self._get_collaborative_scores_for_candidates(user_id, content_candidates)
             
-            # Filter out games user has already rated
-            rated_game_urls = {rating['game_url'] for rating in user_ratings}
-            recommendations = []
+            if not collaborative_scores:
+                print("⚠️  No collaborative scores available. Using content-based only.")
+                return content_candidates[:top_n]
             
-            for idx, score in sim_scores:
-                game_url = self.games_df.iloc[idx]['URL']
-                if game_url not in rated_game_urls:
-                    recommendations.append((idx, score))
-                if len(recommendations) >= top_n:
-                    break
+            print(f"✅ Got collaborative scores for {len(collaborative_scores)} candidates")
             
-            # Get game details for recommendations
-            if recommendations:
-                recommended_indices = [idx for idx, _ in recommendations]
-                recommended_games = self.games_df.iloc[recommended_indices]
-                return recommended_games.to_dict('records')
-            else:
-                return self.get_popular_games(top_n)
-                
+            # Step 3: Combine scores and return top recommendations
+            print(f"🎯 Step 3: Combining content and collaborative scores")
+            final_recommendations = self._combine_content_collaborative_scores(
+                content_candidates, collaborative_scores, top_n
+            )
+            
+            print(f"✅ Content-filtered collaborative recommendations: {len(final_recommendations)} games")
+            return final_recommendations
+            
         except Exception as e:
-            print(f"Error getting recommendations: {e}")
-            return self.get_popular_games(top_n)
+            print(f"Error in content-filtered collaborative recommendations: {e}")
+            return self._get_content_based_recommendations(user_id, top_n)
 
     def get_popular_games(self, top_n=10):
         """Get popular games from database"""
@@ -188,7 +173,7 @@ class GameRecommender:
                     by=['User Rating Count', 'Average User Rating'],
                     ascending=False
                 ).head(top_n)
-                
+                # Ensure 'id' is included
                 return popular.to_dict('records')
             else:
                 print("⚠️  No games data available for recommendations.")
@@ -237,6 +222,7 @@ class GameRecommender:
         except Exception as e:
             print(f"Error getting game by name: {e}")
             return None
+
     def get_game_by_url(self, game_url):
         """Get game details by URL"""
         try:
@@ -255,6 +241,20 @@ class GameRecommender:
         except Exception as e:
             print(f"Error getting game by URL: {e}")
             return None
+    def get_game_by_id(self, game_id):
+        """Get game details by ID"""
+        try:
+            game = db_manager.get_game_by_id(game_id)
+            if game:
+                return game
+            if self.games_df is not None:
+                game = self.games_df[self.games_df['id'] == game_id]
+                if not game.empty:
+                    return game.iloc[0].to_dict()
+            return None
+        except Exception as e:
+            print(f"Error getting game by id: {e}")
+            return None
     def record_interaction(self, user_id, game_url, interaction_type, value=None):
         """Record user interaction with a game"""
         try:
@@ -271,3 +271,239 @@ class GameRecommender:
         except Exception as e:
             print(f"Error recording interaction: {e}")
             return False
+
+    def _get_user_similarity_matrix(self):
+        """Calculate user similarity matrix for collaborative filtering"""
+        try:
+            if not db_manager.is_connected():
+                return None
+            
+            # Get all user interactions
+            all_interactions = db_manager.get_all_interactions()
+            if not all_interactions:
+                return None
+            
+            # Convert to DataFrame
+            interactions_df = pd.DataFrame(all_interactions)
+            
+            # Create user-game rating matrix
+            user_game_matrix = interactions_df.pivot_table(
+                index='user_id', 
+                columns='game_url', 
+                values='value', 
+                fill_value=0
+            )
+            
+            # Calculate user similarity using cosine similarity
+            user_similarity = cosine_similarity(user_game_matrix)
+            
+            # Create user similarity DataFrame
+            user_similarity_df = pd.DataFrame(
+                user_similarity,
+                index=user_game_matrix.index,
+                columns=user_game_matrix.index
+            )
+            
+            return user_similarity_df, user_game_matrix
+            
+        except Exception as e:
+            print(f"Error calculating user similarity: {e}")
+            return None
+
+
+
+    def _get_content_based_recommendations(self, user_id, top_n=10):
+        """Get content-based filtering recommendations"""
+        try:
+            user_ratings = db_manager.get_user_ratings(user_id)
+            if not user_ratings:
+                return []
+            
+            # Build user profile
+            user_profile = np.zeros(len(self.games_df))
+            valid_ratings = 0
+            
+            for rating in user_ratings:
+                game_url = rating['game_url']
+                rating_value = rating['value']
+                
+                if game_url in self.game_id_to_idx:
+                    idx = self.game_id_to_idx[game_url]
+                    similarity_row = self._get_similarity_row(idx)
+                    if similarity_row is not None:
+                        user_profile += similarity_row * rating_value
+                        valid_ratings += 1
+            
+            if valid_ratings == 0:
+                return []
+            
+            user_profile /= valid_ratings  # Normalize
+            
+            # Get top similar games
+            sim_scores = list(enumerate(user_profile))
+            sim_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            # Filter out rated games
+            rated_game_urls = {rating['game_url'] for rating in user_ratings}
+            content_recs = []
+            
+            for idx, score in sim_scores:
+                game_url = self.games_df.iloc[idx]['URL']
+                if game_url not in rated_game_urls:
+                    game = self.games_df.iloc[idx].to_dict()
+                    game['content_score'] = score
+                    content_recs.append(game)
+                if len(content_recs) >= top_n:
+                    break
+            
+            return content_recs
+            
+        except Exception as e:
+            print(f"Error getting content-based recommendations: {e}")
+            return []
+
+
+
+
+
+    def _get_content_based_candidates(self, user_id, candidate_pool_size=30):
+        """Generate a pool of candidate games using content-based filtering"""
+        try:
+            # Get user ratings
+            user_ratings = db_manager.get_user_ratings(user_id)
+            
+            if not user_ratings:
+                return []
+            
+            # Build user profile using content similarity
+            user_profile = np.zeros(len(self.games_df))
+            valid_ratings = 0
+            
+            for rating in user_ratings:
+                game_url = rating['game_url']
+                rating_value = rating['value']
+                
+                if game_url in self.game_id_to_idx:
+                    idx = self.game_id_to_idx[game_url]
+                    similarity_row = self._get_similarity_row(idx)
+                    if similarity_row is not None:
+                        user_profile += similarity_row * rating_value
+                        valid_ratings += 1
+            
+            if valid_ratings == 0:
+                return []
+            
+            # Normalize user profile
+            user_profile /= valid_ratings
+            
+            # Get top similar games (larger pool for candidates)
+            sim_scores = list(enumerate(user_profile))
+            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+            
+            # Filter out games user has already rated
+            rated_game_urls = {rating['game_url'] for rating in user_ratings}
+            candidates = []
+            
+            for idx, content_score in sim_scores:
+                game_url = self.games_df.iloc[idx]['URL']
+                if game_url not in rated_game_urls:
+                    game = self.games_df.iloc[idx].to_dict()
+                    game['content_score'] = content_score
+                    candidates.append(game)
+                if len(candidates) >= candidate_pool_size:
+                    break
+            
+            return candidates
+            
+        except Exception as e:
+            print(f"Error getting content-based candidates: {e}")
+            return []
+
+    def _get_collaborative_scores_for_candidates(self, user_id, candidates):
+        """Get collaborative filtering scores for the candidate games"""
+        try:
+            # Get user similarity matrix
+            similarity_result = self._get_user_similarity_matrix()
+            if similarity_result is None:
+                return {}
+            
+            user_similarity_df, user_game_matrix = similarity_result
+            
+            if user_id not in user_similarity_df.index:
+                return {}
+            
+            # Get user's similarity scores with other users
+            user_similarities = user_similarity_df.loc[user_id].sort_values(ascending=False)
+            
+            # Get top similar users (excluding self)
+            similar_users = user_similarities[1:11].index.tolist()  # Top 10 similar users
+            
+            if not similar_users:
+                return {}
+            
+            # Get games rated by similar users
+            similar_user_ratings = user_game_matrix.loc[similar_users]
+            
+            # Calculate collaborative scores for candidate games
+            collaborative_scores = {}
+            candidate_urls = {game['URL'] for game in candidates}
+            
+            for game_url in candidate_urls:
+                if game_url in similar_user_ratings.columns:
+                    # Get ratings for this game from similar users
+                    game_ratings = similar_user_ratings[game_url]
+                    valid_ratings = game_ratings[game_ratings > 0]  # Only positive ratings
+                    
+                    if len(valid_ratings) > 0:
+                        # Calculate weighted score based on user similarities
+                        total_weight = 0
+                        weighted_sum = 0
+                        
+                        for similar_user in valid_ratings.index:
+                            similarity = user_similarities[similar_user]
+                            rating = valid_ratings[similar_user]
+                            weighted_sum += similarity * rating
+                            total_weight += similarity
+                        
+                        if total_weight > 0:
+                            collaborative_scores[game_url] = weighted_sum / total_weight
+            
+            return collaborative_scores
+            
+        except Exception as e:
+            print(f"Error getting collaborative scores for candidates: {e}")
+            return {}
+
+    def _combine_content_collaborative_scores(self, content_candidates, collaborative_scores, top_n):
+        """Combine content and collaborative scores to rank candidates"""
+        try:
+            combined_scores = []
+            
+            for game in content_candidates:
+                game_url = game['URL']
+                content_score = game.get('content_score', 0)
+                collaborative_score = collaborative_scores.get(game_url, 0)
+                
+                # Calculate combined score (weighted combination)
+                # If no collaborative score, use content score only
+                if collaborative_score > 0:
+                    # Combine scores: 40% content + 60% collaborative
+                    combined_score = (content_score * 0.4) + (collaborative_score * 0.6)
+                else:
+                    # Fallback to content score only
+                    combined_score = content_score * 0.8  # Slightly penalize for no collaborative data
+                
+                game_data = game.copy()
+                game_data['combined_score'] = combined_score
+                game_data['content_score'] = content_score
+                game_data['collaborative_score'] = collaborative_score
+                combined_scores.append(game_data)
+            
+            # Sort by combined score and return top N
+            combined_scores.sort(key=lambda x: x['combined_score'], reverse=True)
+            
+            return combined_scores[:top_n]
+            
+        except Exception as e:
+            print(f"Error combining scores: {e}")
+            return content_candidates[:top_n]

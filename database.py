@@ -52,17 +52,35 @@ class MongoDBManager:
             self.connected = False
     
     def create_indexes(self):
-        """Create necessary indexes in MongoDB collections"""
+        """Create necessary indexes in MongoDB collections with validation"""
         try:
             # Create indexes for users and interactions
             self.users_collection.create_index("username", unique=True)
-            self.users_collection.create_index("email", unique=True)
             self.interactions_collection.create_index([("user_id", 1), ("game_id", 1)], unique=True)
             
-            print("✅ Successfully created MongoDB indexes")
+            # Verify indexes were created
+            users_indexes = self.users_collection.index_information()
+            if 'username_1' not in users_indexes:
+                raise Exception("Failed to create username index")
+                
+            interactions_indexes = self.interactions_collection.index_information()
+            if 'user_id_1_game_id_1' not in interactions_indexes:
+                raise Exception("Failed to create user_id+game_id index")
+            
+            print("✅ Successfully created and verified MongoDB indexes")
             
         except Exception as e:
-            print(f"⚠️  Error creating indexes: {e}")
+            print(f"❌ Error creating indexes: {e}")
+            # Try to drop and recreate indexes if there was an error
+            try:
+                self.users_collection.drop_index("username_1")
+                self.interactions_collection.drop_index([("user_id", 1), ("game_id", 1)])
+                self.users_collection.create_index("username", unique=True)
+                self.interactions_collection.create_index([("user_id", 1), ("game_id", 1)], unique=True)
+                print("✅ Successfully recreated indexes after error")
+            except Exception as retry_error:
+                print(f"❌ Critical: Failed to recreate indexes: {retry_error}")
+                raise retry_error
     
     def setup_sqlite(self):
         """Set up SQLite database for games"""
@@ -70,10 +88,10 @@ class MongoDBManager:
             self.sqlite_conn = sqlite3.connect('data/recommendations.db', check_same_thread=False)
             cursor = self.sqlite_conn.cursor()
             
-            # Create games table
+            # Create games table with id from CSV (no AUTOINCREMENT)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS games (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id INTEGER PRIMARY KEY,
                     URL TEXT,
                     Name TEXT UNIQUE NOT NULL,
                     Description TEXT,
@@ -106,14 +124,15 @@ class MongoDBManager:
             # Clear existing games
             cursor.execute('DELETE FROM games')
             
-            # Insert new games
+            # Insert new games using id from CSV
             for game in games_data:
                 cursor.execute('''
-                    INSERT INTO games (URL, Name, Description, Developer,
+                    INSERT INTO games (id, URL, Name, Description, Developer,
                                     "Average User Rating", "User Rating Count",
                                     "Primary Genre", Genres, "Icon URL")
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
+                    game.get('id'),
                     game.get('URL'),
                     game.get('Name'),
                     game.get('Description'),
@@ -132,35 +151,79 @@ class MongoDBManager:
             print(f"❌ Error loading games data: {e}")
             raise e
     
-    def create_user(self, username, password):
-        """Create a new user in MongoDB"""
+    def create_user(self, username, password, email=None):
+        """Create a new user in MongoDB with enhanced error handling and email verification"""
         try:
             if self.users_collection is None:
+                print("❌ Critical Error: users_collection is None - MongoDB connection issue")
                 raise ConnectionError("MongoDB not connected")
-            
+            if not username or not password:
+                raise ValueError("Username and password cannot be empty")
             user_data = {
                 "username": username,
                 "password": password,
-                "created_at": datetime.utcnow()
+                "email": email,
+                "created_at": datetime.utcnow(),
+                "last_updated": datetime.utcnow(),
+                "verified": False
             }
-            
-            result = self.users_collection.insert_one(user_data)
-            return str(result.inserted_id)
-            
-        except DuplicateKeyError:
-            print(f"❌ Error: Username {username} already exists")
-            return None
+            try:
+                result = self.users_collection.insert_one(user_data)
+                if not result.acknowledged:
+                    raise Exception("MongoDB did not acknowledge the insert operation")
+                print(f"✅ User created successfully with ID: {result.inserted_id}")
+                return str(result.inserted_id)
+            except DuplicateKeyError:
+                print(f"❌ Duplicate username detected: {username}")
+                raise ValueError(f"Username '{username}' already exists") from None
+        except ValueError as ve:
+            print(f"❌ Validation error creating user: {ve}")
+            raise ve
         except Exception as e:
-            print(f"❌ Error creating user: {e}")
-            return None
+            print(f"❌ Database error creating user: {e}")
+            raise Exception("Failed to create user due to database error") from e
+
+    def verify_user(self, user_id):
+        """Set verified=True for a user by user_id"""
+        try:
+            result = self.users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"verified": True, "last_updated": datetime.utcnow()}})
+            return result.modified_count > 0
+        except Exception as e:
+            print(f"❌ Error verifying user: {e}")
+            return False
+    
+    def update_user_profile(self, user_id, new_username=None, new_email=None):
+        """Update user's profile information (username, email)"""
+        try:
+            if self.users_collection is None:
+                raise ConnectionError("MongoDB not connected")
+            update_fields = {}
+            if new_username:
+                update_fields["username"] = new_username
+            if new_email:
+                update_fields["email"] = new_email
+            if not update_fields:
+                raise ValueError("No fields to update")
+            update_fields["last_updated"] = datetime.utcnow()
+            result = self.users_collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": update_fields}
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            print(f"❌ Error updating user profile: {e}")
+            return False
     
     def get_user_by_username(self, username):
         """Get user by username from MongoDB"""
         try:
             if self.users_collection is None:
+                print("DEBUG: users_collection is None")
                 raise ConnectionError("MongoDB not connected")
             
-            return self.users_collection.find_one({"username": username})
+            user = self.users_collection.find_one({"username": username})
+            print(f"DEBUG: Searched for {username}, found: {user}")
+            return user
             
         except Exception as e:
             print(f"❌ Error getting user: {e}")
@@ -181,13 +244,13 @@ class MongoDBManager:
                 print(f"❌ Error: Game '{game_name}' not found in SQLite")
                 raise ValueError("Game not found")
             
-            game_id = game[0]
+            game_id = int(game[0])  # Ensure this is always an integer
             game_url = game[1]
             
             # Store rating in MongoDB
             interaction_data = {
                 "user_id": str(user_id),
-                "game_id": game_id,
+                "game_id": game_id,  # Always integer
                 "game_url": game_url,
                 "value": rating,
                 "timestamp": datetime.utcnow()
@@ -199,10 +262,10 @@ class MongoDBManager:
                 upsert=True
             )
             if result.acknowledged:
-                print(f"✅ Rating saved for user {user_id} on game '{game_name}'")
+                print(f"✅ Rating saved for user {user_id} on game '{game_name}' (game_id={game_id})")
                 return True
             else:
-                print(f"❌ Error: MongoDB did not acknowledge rating save for user {user_id} on game '{game_name}'")
+                print(f"❌ Error: MongoDB did not acknowledge rating save for user {user_id} on game '{game_name}' (game_id={game_id})")
                 return False
         except Exception as e:
             print(f"❌ Error adding rating: {e}")
@@ -251,6 +314,23 @@ class MongoDBManager:
             return None
         except Exception as e:
             print(f"❌ Error getting game by URL: {e}")
+            return None
+    
+    def get_game_by_id(self, game_id):
+        """Get game details by ID from SQLite"""
+        try:
+            cursor = self.sqlite_conn.cursor()
+            cursor.execute('SELECT * FROM games WHERE id = ?', (game_id,))
+            row = cursor.fetchone()
+            if row:
+                columns = [description[0] for description in cursor.description]
+                game_dict = {}
+                for i, value in enumerate(row):
+                    game_dict[columns[i]] = value
+                return game_dict
+            return None
+        except Exception as e:
+            print(f"❌ Error getting game by id: {e}")
             return None
     
     def get_all_games(self, limit=None):
@@ -366,6 +446,35 @@ class MongoDBManager:
         except Exception as e:
             print(f"❌ Error getting games by genre: {e}")
             return [], 0
+    
+    def get_all_users(self):
+        """Return a list of all users"""
+        try:
+            return list(self.users_collection.find())
+        except Exception as e:
+            print(f"❌ Error getting all users: {e}")
+            return []
+
+    def get_all_interactions(self):
+        """Return a list of all user interactions"""
+        try:
+            if not self.is_connected():
+                return []
+            return list(self.interactions_collection.find())
+        except Exception as e:
+            print(f"❌ Error getting all interactions: {e}")
+            return []
+
+    # def get_all_games(self):
+    #     """Return a list of all games from SQLite"""
+    #     try:
+    #         cursor = self.sqlite_conn.cursor()
+    #         cursor.execute('SELECT * FROM games')
+    #         columns = [desc[0] for desc in cursor.description]
+    #         return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    #     except Exception as e:
+    #         print(f"❌ Error getting all games: {e}")
+    #         return []
     
     def is_connected(self):
         """Check if MongoDB is connected"""

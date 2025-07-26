@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+    <h2>API Documentation</h2>
+    <p>This page documents the main public API endpoints for the Game Recommendation System.</p>
+    <table class="table table-bordered table-sm">
+        <thead><tr><th>Endpoint</th><th>Methods</th><th>Description</th><th>Parameters</th></tr></thead>
+        <tbody>
+            <tr><td>/</td><td>GET</td><td>Home page with popular games and genres</td><td>page (int, optional)</td></tr>
+            <tr><td>/search</td><td>GET</td><td>Search for games</td><td>q (string), page (int, optional)</td></tr>
+            <tr><td>/genre/&lt;genre&gt;</td><td>GET</td><td>Browse games by genre</td><td>genre (string), page (int, optional)</td></tr>
+            <tr><td>/game/&lt;game_id&gt;</td><td>GET</td><td>Game detail page</td><td>game_id (int)</td></tr>
+            <tr><td>/rate/&lt;game_id&gt;</td><td>POST</td><td>Rate a game</td><td>game_id (int), rating (float 1-5)</td></tr>
+            <tr><td>/register</td><td>GET, POST</td><td>User registration</td><td>username, password, email</td></tr>
+            <tr><td>/login</td><td>GET, POST</td><td>User login</td><td>username, password</td></tr>
+            <tr><td>/logout</td><td>GET</td><td>Log out user</td><td>-</td></tr>
+            <tr><td>/profile</td><td>GET</td><td>User profile page</td><td>-</td></tr>
+            <tr><td>/profile/edit</td><td>GET, POST</td><td>Edit user profile</td><td>username, email</td></tr>
+            <tr><td>/reset-password</td><td>GET, POST</td><td>Request password reset</td><td>email</td></tr>
+            <tr><td>/reset-password/&lt;token&gt;</td><td>GET, POST</td><td>Reset password with token</td><td>token, password</td></tr>
+            <tr><td>/verify/&lt;token&gt;</td><td>GET</td><td>Verify user email</td><td>token</td></tr>
+            <tr><td>/recommendations</td><td>GET</td><td>Personalized recommendations</td><td>-</td></tr>
+            <tr><td>/admin</td><td>GET</td><td>Admin dashboard (admin only)</td><td>-</td></tr>
+            <tr><td>/api/games</td><td>GET</td><td>API: List games (paginated)</td><td>page (int), per_page (int)</td></tr>
+        </tbody>
+    </table>
+    <p>All endpoints require authentication unless otherwise noted. For more details, see the README or contact the developer.</p>
+</div>
+{% endblock %} 

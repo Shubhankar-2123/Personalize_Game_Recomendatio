@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %} - Recommendations{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2>Personalized Game Recommendations</h2>
+        <small class="text-muted">Last updated: <span id="timestamp"></span></small>
+    </div>
+</div>
+
+{% if no_ratings %}
+<div class="row">
+    <div class="col text-center">
+        <div class="alert alert-info">
+            <h4>📊 Start Rating Games!</h4>
+            <p>To get personalized recommendations, you need to rate some games first.</p>
+            <p class="mb-3">Browse games by genre or search for games you like, then rate them to build your profile.</p>
+            <div class="d-flex justify-content-center gap-2">
+                <a href="{{ url_for('index') }}" class="btn btn-primary">
+                    <i class="fas fa-home"></i> Browse Games
+                </a>
+                <a href="{{ url_for('search') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-search"></i> Search Games
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="row">
+    {% for game in games %}
+    <div class="col-md-3 col-sm-6 mb-4">
+        <div class="card h-100 game-card">
+            <img src="{{ game['Icon URL'] }}" class="card-img-top" alt="{{ game.Name }}" style="height: 200px; object-fit: cover;">
+            <div class="card-body d-flex flex-column">
+                <h5 class="card-title">{{ game.Name }}</h5>
+                <div class="rating-stars mb-2">
+                    {% for i in range(5) %}
+                        {% if i < game['Average User Rating']|int %}
+                            <span class="text-warning">★</span>
+                        {% else %}
+                            <span class="text-muted">☆</span>
+                        {% endif %}
+                    {% endfor %}
+                    <span class="ms-1 text-muted">{{ game['Average User Rating'] }}</span>
+                </div>
+                <p class="card-text text-muted small">{{ game['User Rating Count'] }} ratings</p>
+                <p class="card-text small">
+                    <strong>Genre:</strong> {{ game['Primary Genre'] }}<br>
+                    <strong>Developer:</strong> {{ game.Developer }}<br>
+                    <strong>Average Rating:</strong> {{ "%.1f"|format(game.get('Average User Rating', 0)) }}/5.0<br>
+                    <strong>Votes:</strong> {{ game.get('User Rating Count', 0) }}<br>
+                    {% if game.get('combined_score') is not none %}
+                        <span class="badge bg-success">Recommended</span><br>
+                        <small class="text-muted">Combined Score: {{ "%.2f"|format(game.combined_score) }}</small><br>
+                        <small class="text-muted">Content Score: {{ "%.2f"|format(game.content_score) }}</small><br>
+                        <small class="text-muted">Collaborative Score: {{ "%.2f"|format(game.collaborative_score) }}</small>
+                    {% endif %}
+                </p>
+                <div class="mt-auto">
+                    <a href="{{ url_for('game_detail', game_id=game['id'], ref='recommendations') }}" class="btn btn-outline-primary btn-sm w-100">
+                        View Details
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not games %}
+<div class="row">
+    <div class="col text-center">
+        <div class="alert alert-info">
+            <h4>No games available!</h4>
+            <p>There are no games in the database at the moment.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+<script>
+// Update timestamp when page loads
+if (document.getElementById('timestamp')) {
+    document.getElementById('timestamp').textContent = new Date().toLocaleString();
+}
+</script>
+{% endblock %}

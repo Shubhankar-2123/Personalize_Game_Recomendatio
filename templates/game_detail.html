@@ -4,9 +4,19 @@
 <!-- Back Button -->
 <div class="row mb-4">
     <div class="col">
-        <a href="{{ url_for(referrer) }}" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left"></i> Back to {{ referrer.title() }}
-        </a>
+        {% if referrer == 'genre' %}
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Home
+            </a>
+        {% elif referrer == 'search' %}
+            <a href="{{ url_for('search') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Search
+            </a>
+        {% else %}
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Home
+            </a>
+        {% endif %}
     </div>
 </div>
 
@@ -28,7 +38,7 @@
                 </div>
                 <p class="text-muted">{{ game['User Rating Count'] }} ratings</p>
                 
-                <form method="post" action="{{ url_for('rate_game', game_name=game.Name) }}" class="mt-3">
+                <form method="post" action="{{ url_for('rate_game', game_id=game['id']) }}" class="mt-3">
                     <div class="mb-3">
                         <label for="rating" class="form-label">Rate this game:</label>
                         <select name="rating" id="rating" class="form-select">
