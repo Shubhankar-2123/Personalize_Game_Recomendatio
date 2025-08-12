@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 class GameRecommender:
-    def __init__(self, max_games=5000):
+    def __init__(self, max_games=4000):
         """Initialize recommender system"""
         
         try:
