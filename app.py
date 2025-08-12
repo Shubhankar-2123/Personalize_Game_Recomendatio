@@ -20,6 +20,9 @@ app = Flask(__name__)
 # Use a fixed secret key for CSRF to work reliably across requests
 app.secret_key = 'your-very-secret-key'  # Use a strong, random value in production!
 
+# Add max function to Jinja2 environment for pagination
+app.jinja_env.globals.update(max=max, min=min)
+
 # Initialize rate limiting
 limiter = Limiter(
     key_func=get_remote_address,

@@ -377,12 +377,33 @@ class MongoDBManager:
             return []
     
     def get_all_genres(self):
-        """Get all unique genres from SQLite"""
+        """Get all unique genres from SQLite - combines Primary Genre and detailed genres"""
         try:
             cursor = self.sqlite_conn.cursor()
+            
+            # Get primary genres
             cursor.execute('SELECT DISTINCT "Primary Genre" FROM games WHERE "Primary Genre" IS NOT NULL')
-            genres = [row[0] for row in cursor.fetchall()]
-            return sorted(genres)
+            primary_genres = [row[0] for row in cursor.fetchall()]
+            
+            # Get detailed genres from Genres column
+            cursor.execute('SELECT DISTINCT Genres FROM games WHERE Genres IS NOT NULL')
+            detailed_genres_raw = [row[0] for row in cursor.fetchall()]
+            
+            # Parse detailed genres (they're comma-separated)
+            detailed_genres = set()
+            for genre_string in detailed_genres_raw:
+                if genre_string:
+                    # Split by comma and clean up
+                    genres_list = [g.strip() for g in genre_string.split(',')]
+                    detailed_genres.update(genres_list)
+            
+            # Combine both sets and remove duplicates
+            all_genres = set(primary_genres) | detailed_genres
+            
+            # Filter out empty strings and sort
+            all_genres = [g for g in all_genres if g and g.strip()]
+            return sorted(all_genres)
+            
         except Exception as e:
             print(f"❌ Error getting genres: {e}")
             return []
@@ -420,20 +441,23 @@ class MongoDBManager:
             return [], 0
     
     def get_games_by_genre(self, genre, page=1, per_page=12):
-        """Get games by genre from SQLite"""
+        """Get games by genre from SQLite - searches both Primary Genre and Genres columns"""
         try:
             cursor = self.sqlite_conn.cursor()
             
-            # Get total count
-            cursor.execute('SELECT COUNT(*) FROM games WHERE "Primary Genre" = ?', (genre,))
+            # Get total count - search both Primary Genre and Genres columns
+            cursor.execute('''
+                SELECT COUNT(*) FROM games 
+                WHERE "Primary Genre" = ? OR Genres LIKE ?
+            ''', (genre, f'%{genre}%'))
             total = cursor.fetchone()[0]
             
             # Get paginated results
             cursor.execute('''
                 SELECT * FROM games 
-                WHERE "Primary Genre" = ?
+                WHERE "Primary Genre" = ? OR Genres LIKE ?
                 LIMIT ? OFFSET ?
-            ''', (genre, per_page, (page - 1) * per_page))
+            ''', (genre, f'%{genre}%', per_page, (page - 1) * per_page))
             
             columns = [description[0] for description in cursor.description]
             games = []

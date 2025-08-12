@@ -230,6 +230,9 @@ main {
     color: white;
     position: relative;
     overflow: hidden;
+    max-height: 80vh; /* Limit height to 80% of viewport height */
+    display: flex;
+    flex-direction: column;
 }
 
 .sidebar::before {
@@ -250,6 +253,7 @@ main {
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     position: relative;
     z-index: 1;
+    flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 .list-group-item {
@@ -277,15 +281,52 @@ main {
     transform: translateX(5px);
 }
 
+/* Scrollable Genre List */
+.sidebar .list-group {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.5rem; /* Space for scrollbar */
+    margin-right: -0.5rem; /* Compensate for padding */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+.sidebar .list-group::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar .list-group::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 3px;
+}
+
+.sidebar .list-group::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    transition: background 0.3s ease;
+}
+
+.sidebar .list-group::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* Smooth scrolling for the genre list */
+.sidebar .list-group {
+    scroll-behavior: smooth;
+}
+
 /* Pagination */
 .pagination {
     margin-top: 3rem;
     justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
 }
 
 .page-link {
-    padding: 0.75rem 1.25rem;
-    margin: 0 0.5rem;
+    padding: 0.5rem 0.75rem;
+    margin: 0 0.25rem;
     border-radius: 12px !important;
     border: none;
     color: var(--text-primary);
@@ -293,6 +334,9 @@ main {
     box-shadow: var(--shadow-light);
     font-weight: 600;
     transition: all 0.3s ease;
+    min-width: 40px;
+    text-align: center;
+    font-size: 0.9rem;
 }
 
 .page-link:hover {
@@ -306,6 +350,13 @@ main {
     background: var(--primary-gradient);
     border-color: transparent;
     box-shadow: var(--shadow-medium);
+}
+
+.page-item.disabled .page-link {
+    background: rgba(102, 126, 234, 0.1);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 /* Game Detail Page */
@@ -518,6 +569,7 @@ main {
     .sidebar {
         margin-bottom: 2rem;
         padding: 1.5rem;
+        max-height: 60vh; /* Smaller height on mobile */
     }
 
     .card-img-top {
@@ -543,6 +595,33 @@ main {
 
     .search-form .btn {
         padding: 0.75rem 1.5rem;
+    }
+
+    /* Mobile Pagination */
+    .pagination {
+        gap: 0.15rem;
+        margin-top: 2rem;
+    }
+
+    .page-link {
+        padding: 0.4rem 0.6rem;
+        margin: 0 0.15rem;
+        font-size: 0.85rem;
+        min-width: 35px;
+    }
+}
+
+/* Extra Small Screens */
+@media (max-width: 576px) {
+    .pagination {
+        gap: 0.1rem;
+    }
+
+    .page-link {
+        padding: 0.35rem 0.5rem;
+        margin: 0 0.1rem;
+        font-size: 0.8rem;
+        min-width: 32px;
     }
 }
 
